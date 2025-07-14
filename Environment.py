@@ -1,5 +1,14 @@
 from __future__ import annotations
 
+class Type:
+    value: str
+    cstype: str
+
+    def __init__(self, value: str, cstype: str):
+        self.value = value
+        self.cstype = cstype
+    
+
 class Environment:
     def __init__(self, enclosing: Environment | None = None):
         self.enclosing: Environment | None = enclosing # enclosing is the globals
