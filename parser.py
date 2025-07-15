@@ -1,5 +1,6 @@
 # Parse C Sharp code and extract class names
 import tree_sitter_c_sharp as tscsharp
+import re
 
 from collections.abc import Iterator
 from Environment import Environment
@@ -7,8 +8,123 @@ from tree_sitter import Language, Parser, Tree, Node
 
 class CSEvaluator:
     @staticmethod
-    def evaluate(expression: str):
-        pass
+    def evaluate(expression: str, environment: Environment) -> str:
+        """Evaluate C# expressions and return the resolved value"""
+        if not expression or not expression.strip():
+            return ""
+        
+        expression = expression.strip()
+        
+        # Handle string interpolation: $"Hello {name}!"
+        if expression.startswith('$"') and expression.endswith('"'):
+            return CSEvaluator._resolve_string_interpolation(expression, environment)
+        
+        # Handle string concatenation: "abc" + "def" or a + "def"
+        if '+' in expression:
+            return CSEvaluator._resolve_string_concatenation(expression, environment)
+        
+        # Handle simple variable reference: a
+        if CSEvaluator._is_simple_identifier(expression):
+            return CSEvaluator._resolve_variable_reference(expression, environment)
+        
+        # Handle string literals: "Hello"
+        if expression.startswith('"') and expression.endswith('"'):
+            return expression
+        
+        # Handle numeric literals: 123
+        if expression.isdigit():
+            return expression
+        
+        # Handle boolean literals
+        if expression.lower() in ['true', 'false']:
+            return expression.lower()
+        
+        return expression
+    
+    @staticmethod
+    def _resolve_string_interpolation(expression: str, environment: Environment) -> str:
+        """Resolve string interpolation like $"Hello {name}!" """
+        # Remove the $ and outer quotes
+        content = expression[2:-1]
+        
+        # Find all interpolation expressions {variable}
+        pattern = r'\{([^}]+)\}'
+        
+        def replace_interpolation(match):
+            var_name = match.group(1).strip()
+            # Resolve the variable value
+            value = CSEvaluator._resolve_variable_reference(var_name, environment)
+            # Remove quotes if it's a string literal
+            if value.startswith('"') and value.endswith('"'):
+                value = value[1:-1]
+            return value
+        
+        result = re.sub(pattern, replace_interpolation, content)
+        return f'"{result}"'
+    
+    @staticmethod
+    def _resolve_string_concatenation(expression: str, environment: Environment) -> str:
+        """Resolve string concatenation like "abc" + "def" or a + "def" """
+        parts = expression.split('+')
+        resolved_parts = []
+        
+        for part in parts:
+            part = part.strip()
+            if not part:
+                continue
+            
+            # Resolve each part
+            resolved_part = CSEvaluator.evaluate(part, environment)
+            # Remove quotes if it's a string literal
+            if resolved_part.startswith('"') and resolved_part.endswith('"'):
+                resolved_part = resolved_part[1:-1]
+            resolved_parts.append(resolved_part)
+        
+        # Join all parts and wrap in quotes
+        result = ''.join(resolved_parts)
+        return f'"{result}"'
+    
+    @staticmethod
+    def _resolve_variable_reference(var_name: str, environment: Environment) -> str:
+        """Resolve a variable reference to its value"""
+        # Check if variable exists in environment
+        if hasattr(environment, 'values') and var_name in environment.values:
+            return environment.values[var_name].value
+        return f'"{var_name}"'  # Return as string if not found
+    
+    @staticmethod
+    def _is_simple_identifier(expression: str) -> bool:
+        """Check if expression is a simple identifier (variable name)"""
+        # Simple check: no spaces, no special characters except underscore
+        return bool(re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', expression))
+    
+    @staticmethod
+    def _determine_type(value: str) -> str:
+        """Determine the C# type of a value"""
+        if not value:
+            return "unknown"
+        
+        # Remove quotes for string literals
+        if value.startswith('"') and value.endswith('"'):
+            return "string"
+        
+        # Check for boolean literals
+        if value.lower() in ['true', 'false']:
+            return "bool"
+        
+        # Check for numeric literals
+        if value.isdigit():
+            return "int"
+        
+        # Check for decimal numbers
+        if re.match(r'^\d+\.\d+$', value):
+            return "double"
+        
+        # Check for expressions that result in strings (contains + or $)
+        if '+' in value or value.startswith('$"'):
+            return "string"
+        
+        return "unknown"
 
 
 class CSharpClass:
@@ -58,9 +174,10 @@ class CSharpClass:
             #         self.environment = self.environment.enclosing
 
             if child.type in var_decls_types:
-                for inner in child.children:
-                    # Variable declaration
-                    if inner.type == "variable_declaration":
+                if child.type == "field_declaration":
+                    for inner in child.children:
+                        # Variable declaration
+                        if inner.type == "variable_declaration":
                         var_name = ""
                         var_value = ""
                         for declarator in inner.children:
@@ -93,26 +210,42 @@ class CSharpClass:
                                         # Look for the value after the equals sign
                                         remaining_text = source_bytes[equals_pos:inner.end_byte].decode().strip()
                                         if remaining_text:
-                                            var_value = remaining_text
+                                            # Resolve the expression using the evaluator
+                                            var_value = CSEvaluator.evaluate(remaining_text, self.environment)
                                     else:
                                         # Check if this item has a value (like literal expressions)
                                         if hasattr(item, 'text') and item.text:
                                             var_value = item.text.decode()
 
                                 if var_name:
-                                    print(self.environment.define(var_name, var_value))
+                                    # Create a Type object for the value
+                                    from Environment import Type
+                                    cstype = CSEvaluator._determine_type(var_value)
+                                    type_obj = Type(var_value, cstype)
+                                    print(self.environment.define(var_name, type_obj))
                                     print(f"defined: {var_name} {var_value}")
                             else:
-                                # assignement
+                                # assignment
                                 var_name = source_bytes[declarator.start_byte:declarator.end_byte].decode()
-                                var_value = source_bytes[declarator.end_byte:inner.end_byte].decode().strip().lstrip("=").strip()
+                                raw_value = source_bytes[declarator.end_byte:inner.end_byte].decode().strip().lstrip("=").strip()
+                                # Resolve the expression using the evaluator
+                                var_value = CSEvaluator.evaluate(raw_value, self.environment)
                                 
                                 if var_name:
-                                    print(self.environment.assign(var_name, var_value))
+                                    # Create a Type object for the value
+                                    from Environment import Type
+                                    cstype = CSEvaluator._determine_type(var_value)
+                                    type_obj = Type(var_value, cstype)
+                                    print(self.environment.assign(var_name, type_obj))
                                     print(f"assigned: {var_name} {var_value}")
 
+    def resolve_all(self):
+        for var_name, type_obj in self.environment.values.items():
+            resolved = CSEvaluator.evaluate(type_obj.value, self.environment)
+            type_obj.value = resolved
+
 class CSharp:
-    var_decl_types = ["field_declaration"] # , "event_field_declaration" ## support not needed now
+    var_decl_types = ["field_declaration", "property_declaration", "method_declaration"] # , "event_field_declaration" ## support not needed now
 
     language = Language(tscsharp.language())
     parser = Parser(language)

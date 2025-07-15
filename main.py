@@ -16,19 +16,31 @@ if __name__ == "__main__":
 
     print()
     
-    another_test = """
-public class MyClass {
-    var y = 122;
-    int x = 10;
-    x = 11;
-    string name = "Alice";
-    bool flag;
-    //event EventHandler OnSomething;
+    # Test resolver functionality
+    resolver_test = """
+public class ResolverTest {
+    var a = "abc" + "def";
+    var b = a + "fjk";
+    var c = $"{b}lmn";
+    int anumber = 10;
+    int somenumber = a + 10;
+    var somebool = true;
+    string greeting = "Hello";
+    string name = "World";
+    string message = greeting + " " + name;
+    string interpolated = $"Welcome {name}!";
+    
+    // Expression-bodied members
+    private string Endpoint => $"{GlobalLabShare}/gl-share/api/Admin/share";
+    private string EndpointWithShareLink(string shareLink) => $"{Endpoint}/{shareLink}/recipients";
 }
 """
-    cs = CSharp(another_test)
+    cs = CSharp(resolver_test)
     for _class in cs.get_classes():
-        print(_class.class_name)
-        print(_class.attributes)
-        print(_class.environment.enclosing)
-        print(_class.environment.values)
+        _class.resolve_all()
+        print(f"Class: {_class.class_name}")
+        print(f"Attributes: {_class.attributes}")
+        print("Environment values:")
+        for var_name, type_obj in _class.environment.values.items():
+            print(f"  {var_name}: {type_obj.value} (type: {type_obj.cstype})")
+        print()
