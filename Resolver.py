@@ -1,6 +1,6 @@
 import re
 
-from Environment import Environment
+from Environment import Environment, Type
 
 
 class CSEvaluator:
@@ -22,6 +22,14 @@ class CSEvaluator:
         if expression.startswith('$"') and expression.endswith('"'):
             return CSEvaluator._resolve_string_interpolation(expression, environment)
         
+        # Handle function/method call: Foo("bar")
+        func_call_match = re.match(r'^([a-zA-Z_][a-zA-Z0-9_]*)\((.*)\)$', expression)
+        if func_call_match:
+            func_name = func_call_match.group(1)
+            arg_str = func_call_match.group(2)
+            args = CSEvaluator._parse_args(arg_str)
+            return CSEvaluator._call_method(func_name, args, environment)
+
         # Handle string concatenation: "abc" + "def" or a + "def"
         if '+' in expression:
             return CSEvaluator._resolve_string_concatenation(expression, environment)
@@ -45,6 +53,56 @@ class CSEvaluator:
         return expression
     
     @staticmethod
+    def _parse_args(arg_str: str):
+        # This is a simple parser, does not handle nested commas or complex expressions
+        args = []
+        depth = 0
+        current = ''
+        for c in arg_str:
+            if c == ',' and depth == 0:
+                args.append(current.strip())
+                current = ''
+            else:
+                if c == '(':
+                    depth += 1
+                elif c == ')':
+                    depth -= 1
+                current += c
+        if current.strip():
+            args.append(current.strip())
+        return args
+
+    @staticmethod
+    def _call_method(func_name: str, args, environment: Environment) -> str:
+        type_obj = environment.get(func_name)
+        if type_obj is not None and hasattr(type_obj, "cstype") and type_obj.cstype == "method":
+            method_obj = type_obj.value
+            # Bind arguments to parameters
+            param_names = []
+            for child in method_obj.node.children:
+                if child.type == "parameter_list":
+                    for param in child.children:
+                        if param.type == "parameter":
+                            for param_child in param.children:
+                                if param_child.type == "identifier" and param_child.text:
+                                    param_names.append(param_child.text.decode())
+            # Create a new environment for the call
+            call_env = Environment(method_obj.environment.class_ref.environment)
+            for pname, pval in zip(param_names, args):
+                # Evaluate argument in the calling environment
+                arg_val = CSEvaluator.evaluate(pval, environment)
+                call_env.define(pname, Type(arg_val, "string"))
+            # Evaluate the method's body/expression in the new environment
+            # Find the arrow_expression_clause
+            for child in method_obj.node.children:
+                if child.type == "arrow_expression_clause":
+                    expr = method_obj.source[child.start_byte:child.end_byte].decode().replace("=>", "").strip()
+                    return CSEvaluator.evaluate(expr, call_env)
+            # If block, you could extend to support block bodies
+        print(f"UNRESOLVED FUNC CALL: {func_name}({', '.join(args)})")
+        return f'"{func_name}({", ".join(args)})"'
+    
+    @staticmethod
     def _resolve_string_interpolation(expression: str, environment: Environment) -> str:
         """Resolve string interpolation like $"Hello {name}!" """
         # Remove the $ and outer quotes
@@ -54,10 +112,8 @@ class CSEvaluator:
         pattern = r'\{([^}]+)\}'
         
         def replace_interpolation(match):
-            var_name = match.group(1).strip()
-            # Resolve the variable value
-            value = CSEvaluator._resolve_variable_reference(var_name, environment)
-            # Remove quotes if it's a string literal
+            expr = match.group(1).strip()
+            value = CSEvaluator.evaluate(expr, environment)
             if value.startswith('"') and value.endswith('"'):
                 value = value[1:-1]
             return value
@@ -92,7 +148,11 @@ class CSEvaluator:
         """Resolve a variable reference to its value"""
         type_obj = environment.get(var_name)
         if type_obj is not None:
-            return type_obj.value
+            # If it's a method, return its name (or you could raise an error)
+            if hasattr(type_obj, "cstype") and type_obj.cstype == "method":
+                return f'"{var_name}"'
+            if isinstance(type_obj.value, str):
+                return type_obj.value
         print(f'\n -- -- -- -- \nUNRESOLVED VAR"{var_name}"\n -- -- -- -- \n')
         return f'"{var_name}"'  # Return as string if not found 
     

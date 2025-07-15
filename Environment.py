@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+
 class Type:
-    value: str
     cstype: str
 
-    def __init__(self, value: str, cstype: str):
+    def __init__(self, value, cstype: str):
         self.value = value
         self.cstype = cstype
     

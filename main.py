@@ -1,5 +1,5 @@
 import os
-from Parser import CSharp
+from Parser import CSharpFile
 from helper import create_globals, globals
 
 if __name__ == "__main__":
@@ -12,32 +12,34 @@ if __name__ == "__main__":
     to_parse = """
 public sealed class Admin_Share_Recipients : APITest
 {
-    private string Endpoint => $"{GlobalLabShare}/gl-share/api/Admin/share";
+    private string Endpoint = $"gl-share/api/Admin/share";
 
     private string EndpointWithShareLink(string shareLink) => $"{Endpoint}/{shareLink}/recipients";
 
-    private string anothervar = $"{EndpintWithShareLink("somelink/ink")}";
-
-    [Test]
-    [Data.SetUp(Tokens.TokenAdminAPI, Tokens.TokenBasicUserAPI, Shares.KkomradeNoMessage)]
-    [Recycle(Recycled.TokenAdminAPI)]
-    [Swagger(Path = Paths.None, Operation = OperationType.Post, ResponseCode = 200)]
-    public void POST_AdminShareRecipients_AddRecipient_200_141306()
-    {
-        var token = Get<Token>(Tokens.TokenAdminAPI);
-        var shareGroup = Get<ShareGroup>(Shares.KkomradeNoMessage);
-        Models.User toAdd = Get<Models.User>(Users.BasicTierUser);
-        Recipient recipient = (Recipient)toAdd with
-        {
-            UserWhoAddedRecipient = token.User.Email,
-
-        };
-    }
+    private string anothervar = $"{EndpointWithShareLink("somelink/ink")}";
 }
 """
 
+#     [Test]
+#     [Data.SetUp(Tokens.TokenAdminAPI, Tokens.TokenBasicUserAPI, Shares.KkomradeNoMessage)]
+#     [Recycle(Recycled.TokenAdminAPI)]
+#     [Swagger(Path = Paths.None, Operation = OperationType.Post, ResponseCode = 200)]
+#     public void POST_AdminShareRecipients_AddRecipient_200_141306()
+#     {
+#         var token = Get<Token>(Tokens.TokenAdminAPI);
+#         var shareGroup = Get<ShareGroup>(Shares.KkomradeNoMessage);
+#         Models.User toAdd = Get<Models.User>(Users.BasicTierUser);
+#         Recipient recipient = (Recipient)toAdd with
+#         {
+#             UserWhoAddedRecipient = token.User.Email,
+
+#         };
+#     }
+# }
+# """
+
     globals_env = create_globals(globals)
-    cs = CSharp(to_parse, globals=globals_env)
+    cs = CSharpFile(to_parse, globals=globals_env)
     for _class in cs.get_classes():
         print(f"Class: {_class.class_name}")
         print(f"Attributes: {_class.attributes}")

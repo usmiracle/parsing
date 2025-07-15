@@ -89,14 +89,3 @@ def create_globals(globals_str: str) -> Environment:
             value = value[1:-1]
         env.define(var_name, Type(value, "string"))
     return env
-
-print("printing")
-env = create_globals(globals)
-print(env)
-print(env.values)
-
-# Test
-if __name__ == "__main___":
-    print("printing")
-    env = create_globals(globals)
-    print(env.values)
