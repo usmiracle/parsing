@@ -43,6 +43,7 @@ public sealed class Admin_Share_Recipients : APITest
     for _class in cs.get_classes():
         print(f"Class: {_class.class_name}")
         print(f"Attributes: {_class.attributes}")
+        print(f"Super Class: {_class.super_class_name}")
         print("Class Environment:")
         for var_name, type_obj in _class.environment.values.items():
             print(f"  {var_name}: {type_obj} (type: {type_obj.cstype})")

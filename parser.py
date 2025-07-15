@@ -116,6 +116,7 @@ class CSharpClass:
     node: Node
     attributes: list[str]
     class_name: str
+    super_class_name: str  # <-- Add this
     environment: Environment
 
     def __init__(self, node: Node, source_bytes: bytes, globals: Environment | None = None):
@@ -123,9 +124,11 @@ class CSharpClass:
         self.source = source_bytes  # Add this line
         self.attributes = []
         self.class_name = ""
+        self.super_class_name = ""  # <-- Initialize
         self.environment = Environment(globals)
         self._extract_attributes(source_bytes)
         self._extract_class_name()
+        self._extract_super_class_name(source_bytes)  # <-- Add this
         self._load_classlevel_variables(source_bytes)
         self._parse_method_declarations()  # NEW
 
@@ -139,6 +142,22 @@ class CSharpClass:
         for child in self.node.children:
             if child.type == "identifier" and child.text:
                 self.class_name = child.text.decode()
+
+    def _extract_super_class_name(self, source_bytes: bytes):
+        for child in self.node.children:
+            if child.type == "base_list":
+                # base_list: ':' base_type (',' base_type)*
+                for base_child in child.children:
+                    # The first identifier under base_list is usually the superclass
+                    if base_child.type == "identifier" and base_child.text:
+                        self.super_class_name = base_child.text.decode()
+                        return
+                    # Fallback: check for base_type → identifier
+                    if base_child.type == "base_type":
+                        for t in base_child.children:
+                            if t.type == "identifier" and t.text:
+                                self.super_class_name = t.text.decode()
+                                return
 
     def _load_classlevel_variables(self, source_bytes: bytes):
         var_decls_types = CSharpFile.var_decl_types
