@@ -18,6 +18,7 @@ if __name__ == "__main__":
     
     another_test = """
 public class MyClass {
+    var y = 122;
     int x = 10;
     x = 11;
     string name = "Alice";

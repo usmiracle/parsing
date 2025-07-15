@@ -7,7 +7,7 @@ from tree_sitter import Language, Parser, Tree, Node
 
 class CSEvaluator:
     @staticmethod
-    def evaluate(expression: any):
+    def evaluate(expression: str):
         pass
 
 
@@ -34,8 +34,8 @@ class CSharpClass:
 
     def _extract_class_name(self):
         for child in self.node.children:
-            if child.type == "identifier":
-                self.class_name = child.text.decode("utf-8")
+            if child.type == "identifier" and child.text:
+                self.class_name = child.text.decode()
 
     def _load_classlevel_variables(self, source_bytes: bytes):
         var_decls_types = CSharp.var_decl_types
@@ -64,7 +64,7 @@ class CSharpClass:
                         var_name = ""
                         var_value = ""
                         for declarator in inner.children:
-                            # declarator can be predefined_type
+                            # declarator can be predefined_type or implicit_type (var)
 
                             if declarator.type == "predefined_type":
                                 predef_type = source_bytes[declarator.start_byte:declarator.end_byte].decode().strip()
@@ -75,6 +75,9 @@ class CSharpClass:
                                         var_value = "0"
                                     case "bool":
                                         var_value = "false"
+                            elif declarator.type == "implicit_type":
+                                # For var declarations, we need to look at the initializer to determine the value
+                                var_value = ""  # Default for var without initializer
 
                             if declarator.type != "variable_declarator" and declarator.type != "identifier":
                                 continue
@@ -84,13 +87,17 @@ class CSharpClass:
                                     if item.type == "identifier":
                                         var_name = source_bytes[item.start_byte:item.end_byte].decode()
                                     elif item.type == "=":
-                                        # Get full text after '='
-                                        continue
-                                        var_value = source_bytes[item.start_byte:inner.end_byte].decode()
-                                        var_value = var_value.strip().lstrip('=').strip()
+                                        # Get the value after '='
+                                        # Find the next sibling or look ahead for the value
+                                        equals_pos = item.end_byte
+                                        # Look for the value after the equals sign
+                                        remaining_text = source_bytes[equals_pos:inner.end_byte].decode().strip()
+                                        if remaining_text:
+                                            var_value = remaining_text
                                     else:
-                                        pass
-                                        # var_value = resolve()
+                                        # Check if this item has a value (like literal expressions)
+                                        if hasattr(item, 'text') and item.text:
+                                            var_value = item.text.decode()
 
                                 if var_name:
                                     print(self.environment.define(var_name, var_value))
