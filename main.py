@@ -31,6 +31,7 @@ public class ResolverTest {
     string interpolated = $"Welcome {name}!";
     
     // Expression-bodied members
+    var GlobalLabShare = "https://global-lab.com";
     private string Endpoint => $"{GlobalLabShare}/gl-share/api/Admin/share";
     private string EndpointWithShareLink(string shareLink) => $"{Endpoint}/{shareLink}/recipients";
 }

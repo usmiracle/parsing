@@ -178,66 +178,140 @@ class CSharpClass:
                     for inner in child.children:
                         # Variable declaration
                         if inner.type == "variable_declaration":
-                        var_name = ""
-                        var_value = ""
-                        for declarator in inner.children:
-                            # declarator can be predefined_type or implicit_type (var)
+                            var_name = ""
+                            var_value = ""
+                            for declarator in inner.children:
+                                # declarator can be predefined_type or implicit_type (var)
 
-                            if declarator.type == "predefined_type":
-                                predef_type = source_bytes[declarator.start_byte:declarator.end_byte].decode().strip()
-                                match predef_type:
-                                    case "string":
-                                        var_value = ""
-                                    case "int":
-                                        var_value = "0"
-                                    case "bool":
-                                        var_value = "false"
-                            elif declarator.type == "implicit_type":
-                                # For var declarations, we need to look at the initializer to determine the value
-                                var_value = ""  # Default for var without initializer
+                                if declarator.type == "predefined_type":
+                                    predef_type = source_bytes[declarator.start_byte:declarator.end_byte].decode().strip()
+                                    match predef_type:
+                                        case "string":
+                                            var_value = ""
+                                        case "int":
+                                            var_value = "0"
+                                        case "bool":
+                                            var_value = "false"
+                                elif declarator.type == "implicit_type":
+                                    # For var declarations, we need to look at the initializer to determine the value
+                                    var_value = ""  # Default for var without initializer
 
-                            if declarator.type != "variable_declarator" and declarator.type != "identifier":
-                                continue
+                                if declarator.type != "variable_declarator" and declarator.type != "identifier":
+                                    continue
 
-                            if declarator.type == "variable_declarator":
-                                for item in declarator.children:
-                                    if item.type == "identifier":
-                                        var_name = source_bytes[item.start_byte:item.end_byte].decode()
-                                    elif item.type == "=":
-                                        # Get the value after '='
-                                        # Find the next sibling or look ahead for the value
-                                        equals_pos = item.end_byte
-                                        # Look for the value after the equals sign
-                                        remaining_text = source_bytes[equals_pos:inner.end_byte].decode().strip()
-                                        if remaining_text:
-                                            # Resolve the expression using the evaluator
-                                            var_value = CSEvaluator.evaluate(remaining_text, self.environment)
+                                if declarator.type == "variable_declarator":
+                                    for item in declarator.children:
+                                        if item.type == "identifier":
+                                            var_name = source_bytes[item.start_byte:item.end_byte].decode()
+                                        elif item.type == "=":
+                                            # Get the value after '='
+                                            # Find the next sibling or look ahead for the value
+                                            equals_pos = item.end_byte
+                                            # Look for the value after the equals sign
+                                            remaining_text = source_bytes[equals_pos:inner.end_byte].decode().strip()
+                                            if remaining_text:
+                                                # Resolve the expression using the evaluator
+                                                var_value = CSEvaluator.evaluate(remaining_text, self.environment)
                                     else:
                                         # Check if this item has a value (like literal expressions)
                                         if hasattr(item, 'text') and item.text:
                                             var_value = item.text.decode()
 
-                                if var_name:
-                                    # Create a Type object for the value
-                                    from Environment import Type
-                                    cstype = CSEvaluator._determine_type(var_value)
-                                    type_obj = Type(var_value, cstype)
-                                    print(self.environment.define(var_name, type_obj))
-                                    print(f"defined: {var_name} {var_value}")
-                            else:
-                                # assignment
-                                var_name = source_bytes[declarator.start_byte:declarator.end_byte].decode()
-                                raw_value = source_bytes[declarator.end_byte:inner.end_byte].decode().strip().lstrip("=").strip()
-                                # Resolve the expression using the evaluator
-                                var_value = CSEvaluator.evaluate(raw_value, self.environment)
-                                
-                                if var_name:
-                                    # Create a Type object for the value
-                                    from Environment import Type
-                                    cstype = CSEvaluator._determine_type(var_value)
-                                    type_obj = Type(var_value, cstype)
-                                    print(self.environment.assign(var_name, type_obj))
-                                    print(f"assigned: {var_name} {var_value}")
+                                    if var_name:
+                                        # Create a Type object for the value
+                                        from Environment import Type
+                                        cstype = CSEvaluator._determine_type(var_value)
+                                        type_obj = Type(var_value, cstype)
+                                        print(self.environment.define(var_name, type_obj))
+                                        print(f"defined: {var_name} {var_value}")
+                                else:
+                                    # assignment
+                                    var_name = source_bytes[declarator.start_byte:declarator.end_byte].decode()
+                                    raw_value = source_bytes[declarator.end_byte:inner.end_byte].decode().strip().lstrip("=").strip()
+                                    # Resolve the expression using the evaluator
+                                    var_value = CSEvaluator.evaluate(raw_value, self.environment)
+                                    
+                                    if var_name:
+                                        # Create a Type object for the value
+                                        from Environment import Type
+                                        cstype = CSEvaluator._determine_type(var_value)
+                                        type_obj = Type(var_value, cstype)
+                                        print(self.environment.assign(var_name, type_obj))
+                                        print(f"assigned: {var_name} {var_value}")
+                
+                elif child.type == "property_declaration":
+                    # Handle property declarations with arrow expressions
+                    self._parse_property_declaration(child, source_bytes)
+                
+                elif child.type == "method_declaration":
+                    # Handle method declarations with arrow expressions
+                    self._parse_method_declaration(child, source_bytes)
+                else:
+                    pass
+
+    def _parse_property_declaration(self, node: Node, source_bytes: bytes):
+        """Parse property declarations with arrow expressions"""
+        var_name = ""
+        var_value = ""
+        
+        for child in node.children:
+            if child.type == "identifier":
+                var_name = source_bytes[child.start_byte:child.end_byte].decode()
+            elif child.type == "arrow_expression_clause":
+                # Extract the expression after =>
+                expression_text = source_bytes[child.start_byte:child.end_byte].decode()
+                # Remove the "=>" part
+                var_value = expression_text.replace("=>", "").strip()
+                break
+        
+        if var_name and var_value:
+            try:
+                # Try to resolve the expression
+                resolved_value = CSEvaluator.evaluate(var_value, self.environment)
+                from Environment import Type
+                cstype = CSEvaluator._determine_type(resolved_value)
+                type_obj = Type(resolved_value, cstype)
+                print(self.environment.define(var_name, type_obj))
+                print(f"defined property: {var_name} {resolved_value}")
+            except Exception as e:
+                print(f"COULD NOT BE RESOLVED: {var_name} = {var_value}")
+                print(f"Error: {e}")
+                # Store the unresolved value
+                from Environment import Type
+                type_obj = Type(var_value, "unknown")
+                print(self.environment.define(var_name, type_obj))
+    
+    def _parse_method_declaration(self, node: Node, source_bytes: bytes):
+        """Parse method declarations with arrow expressions"""
+        var_name = ""
+        var_value = ""
+        
+        for child in node.children:
+            if child.type == "identifier":
+                var_name = source_bytes[child.start_byte:child.end_byte].decode()
+            elif child.type == "arrow_expression_clause":
+                # Extract the expression after =>
+                expression_text = source_bytes[child.start_byte:child.end_byte].decode()
+                # Remove the "=>" part
+                var_value = expression_text.replace("=>", "").strip()
+                break
+        
+        if var_name and var_value:
+            try:
+                # Try to resolve the expression
+                resolved_value = CSEvaluator.evaluate(var_value, self.environment)
+                from Environment import Type
+                cstype = CSEvaluator._determine_type(resolved_value)
+                type_obj = Type(resolved_value, cstype)
+                print(self.environment.define(var_name, type_obj))
+                print(f"defined method: {var_name} {resolved_value}")
+            except Exception as e:
+                print(f"COULD NOT BE RESOLVED: {var_name} = {var_value}")
+                print(f"Error: {e}")
+                # Store the unresolved value
+                from Environment import Type
+                type_obj = Type(var_value, "unknown")
+                print(self.environment.define(var_name, type_obj))
 
     def resolve_all(self):
         for var_name, type_obj in self.environment.values.items():
