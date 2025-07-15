@@ -8,6 +8,12 @@ class Type:
         self.value = value
         self.cstype = cstype
     
+    def __str__(self) -> str:
+        return f"'{self.value}'"
+    
+    def __repr__(self) -> str:
+        return self.__str__()
+
 
 class Environment:
     def __init__(self, enclosing: Environment | None = None):

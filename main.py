@@ -1,47 +1,56 @@
 import os
 from Parser import CSharp
+from helper import create_globals, globals
 
 if __name__ == "__main__":
     current_dir = os.path.dirname(__file__)
     cs_file = os.path.join(current_dir, "to_parse.cs")
 
-    with open(cs_file, "r") as file:
-        to_parse = file.read()
+    # with open(cs_file, "r") as file:
+    #     to_parse = file.read()
 
-    cs = CSharp(to_parse)
-    for _class in cs.get_classes():
-        print(_class.class_name)
-        print(_class.attributes)
-        print(_class.environment.values)
-
-    print()
-    
-    # Test resolver functionality
-    resolver_test = """
-public class ResolverTest {
-    var a = "abc" + "def";
-    var b = a + "fjk";
-    var c = $"{b}lmn";
-    int anumber = 10;
-    int somenumber = a + 10;
-    var somebool = true;
-    string greeting = "Hello";
-    string name = "World";
-    string message = greeting + " " + name;
-    string interpolated = $"Welcome {name}!";
-    
-    // Expression-bodied members
-    var GlobalLabShare = "https://global-lab.com";
+    to_parse = """
+public sealed class Admin_Share_Recipients : APITest
+{
     private string Endpoint => $"{GlobalLabShare}/gl-share/api/Admin/share";
+
     private string EndpointWithShareLink(string shareLink) => $"{Endpoint}/{shareLink}/recipients";
+
+    private string anothervar = $"{EndpintWithShareLink("somelink/ink")}";
+
+    [Test]
+    [Data.SetUp(Tokens.TokenAdminAPI, Tokens.TokenBasicUserAPI, Shares.KkomradeNoMessage)]
+    [Recycle(Recycled.TokenAdminAPI)]
+    [Swagger(Path = Paths.None, Operation = OperationType.Post, ResponseCode = 200)]
+    public void POST_AdminShareRecipients_AddRecipient_200_141306()
+    {
+        var token = Get<Token>(Tokens.TokenAdminAPI);
+        var shareGroup = Get<ShareGroup>(Shares.KkomradeNoMessage);
+        Models.User toAdd = Get<Models.User>(Users.BasicTierUser);
+        Recipient recipient = (Recipient)toAdd with
+        {
+            UserWhoAddedRecipient = token.User.Email,
+
+        };
+    }
 }
 """
-    cs = CSharp(resolver_test)
+
+    globals_env = create_globals(globals)
+    cs = CSharp(to_parse, globals=globals_env)
     for _class in cs.get_classes():
-        _class.resolve_all()
         print(f"Class: {_class.class_name}")
         print(f"Attributes: {_class.attributes}")
-        print("Environment values:")
+        print("Class Environment:")
         for var_name, type_obj in _class.environment.values.items():
-            print(f"  {var_name}: {type_obj.value} (type: {type_obj.cstype})")
+            print(f"  {var_name}: {type_obj} (type: {type_obj.cstype})")
+        print("Methods:")
+        for method in _class.get_methods():
+            print(f"  Method: {method.method_name}")
+            print(f"    Attributes: {method.attributes}")
+            print(f"    Method Environment:")
+            for var_name, type_obj in method.environment.values.items():
+                print(f"      {var_name}: {type_obj} (type: {type_obj.cstype})")
         print()
+
+    

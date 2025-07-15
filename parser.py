@@ -1,130 +1,51 @@
 # Parse C Sharp code and extract class names
 import tree_sitter_c_sharp as tscsharp
-import re
 
 from collections.abc import Iterator
 from Environment import Environment
 from tree_sitter import Language, Parser, Tree, Node
 
-class CSEvaluator:
-    @staticmethod
-    def evaluate(expression: str, environment: Environment) -> str:
-        """Evaluate C# expressions and return the resolved value"""
-        if not expression or not expression.strip():
-            return ""
-        
-        expression = expression.strip()
-        
-        # Handle string interpolation: $"Hello {name}!"
-        if expression.startswith('$"') and expression.endswith('"'):
-            return CSEvaluator._resolve_string_interpolation(expression, environment)
-        
-        # Handle string concatenation: "abc" + "def" or a + "def"
-        if '+' in expression:
-            return CSEvaluator._resolve_string_concatenation(expression, environment)
-        
-        # Handle simple variable reference: a
-        if CSEvaluator._is_simple_identifier(expression):
-            return CSEvaluator._resolve_variable_reference(expression, environment)
-        
-        # Handle string literals: "Hello"
-        if expression.startswith('"') and expression.endswith('"'):
-            return expression
-        
-        # Handle numeric literals: 123
-        if expression.isdigit():
-            return expression
-        
-        # Handle boolean literals
-        if expression.lower() in ['true', 'false']:
-            return expression.lower()
-        
-        return expression
-    
-    @staticmethod
-    def _resolve_string_interpolation(expression: str, environment: Environment) -> str:
-        """Resolve string interpolation like $"Hello {name}!" """
-        # Remove the $ and outer quotes
-        content = expression[2:-1]
-        
-        # Find all interpolation expressions {variable}
-        pattern = r'\{([^}]+)\}'
-        
-        def replace_interpolation(match):
-            var_name = match.group(1).strip()
-            # Resolve the variable value
-            value = CSEvaluator._resolve_variable_reference(var_name, environment)
-            # Remove quotes if it's a string literal
-            if value.startswith('"') and value.endswith('"'):
-                value = value[1:-1]
-            return value
-        
-        result = re.sub(pattern, replace_interpolation, content)
-        return f'"{result}"'
-    
-    @staticmethod
-    def _resolve_string_concatenation(expression: str, environment: Environment) -> str:
-        """Resolve string concatenation like "abc" + "def" or a + "def" """
-        parts = expression.split('+')
-        resolved_parts = []
-        
-        for part in parts:
-            part = part.strip()
-            if not part:
-                continue
-            
-            # Resolve each part
-            resolved_part = CSEvaluator.evaluate(part, environment)
-            # Remove quotes if it's a string literal
-            if resolved_part.startswith('"') and resolved_part.endswith('"'):
-                resolved_part = resolved_part[1:-1]
-            resolved_parts.append(resolved_part)
-        
-        # Join all parts and wrap in quotes
-        result = ''.join(resolved_parts)
-        return f'"{result}"'
-    
-    @staticmethod
-    def _resolve_variable_reference(var_name: str, environment: Environment) -> str:
-        """Resolve a variable reference to its value"""
-        # Check if variable exists in environment
-        if hasattr(environment, 'values') and var_name in environment.values:
-            return environment.values[var_name].value
-        return f'"{var_name}"'  # Return as string if not found
-    
-    @staticmethod
-    def _is_simple_identifier(expression: str) -> bool:
-        """Check if expression is a simple identifier (variable name)"""
-        # Simple check: no spaces, no special characters except underscore
-        return bool(re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', expression))
-    
-    @staticmethod
-    def _determine_type(value: str) -> str:
-        """Determine the C# type of a value"""
-        if not value:
-            return "unknown"
-        
-        # Remove quotes for string literals
-        if value.startswith('"') and value.endswith('"'):
-            return "string"
-        
-        # Check for boolean literals
-        if value.lower() in ['true', 'false']:
-            return "bool"
-        
-        # Check for numeric literals
-        if value.isdigit():
-            return "int"
-        
-        # Check for decimal numbers
-        if re.match(r'^\d+\.\d+$', value):
-            return "double"
-        
-        # Check for expressions that result in strings (contains + or $)
-        if '+' in value or value.startswith('$"'):
-            return "string"
-        
-        return "unknown"
+from Resolver import CSEvaluator
+
+
+class CSharpMethod:
+    def __init__(self, node: Node, source_bytes: bytes, class_ref: 'CSharpClass'):
+        self.node = node
+        self.attributes = []
+        self.method_name = ""
+        self.class_ref = class_ref
+        # Environment: enclosing is the class's environment
+        self.environment = Environment(class_ref.environment)
+        self._extract_attributes(source_bytes)
+        self._extract_method_name()
+        self._load_methodlevel_variables(source_bytes)
+
+    def _extract_attributes(self, source_bytes: bytes):
+        for child in self.node.children:
+            if child.type == "attribute_list":
+                attr_text = source_bytes[child.start_byte:child.end_byte].decode()
+                self.attributes.append(attr_text)
+
+    def _extract_method_name(self):
+        for child in self.node.children:
+            if child.type == "identifier" and child.text:
+                self.method_name = child.text.decode()
+
+    def _load_methodlevel_variables(self, source_bytes: bytes):
+        # You can expand this to parse method parameters, local variables, etc.
+        # For now, let's just parse parameters as variables
+        for child in self.node.children:
+            if child.type == "parameter_list":
+                for param in child.children:
+                    if param.type == "parameter":
+                        var_name = None
+                        for param_child in param.children:
+                            if param_child.type == "identifier" and param_child.text:
+                                var_name = param_child.text.decode()
+                        if var_name:
+                            from Environment import Type
+                            # Default to string type for now
+                            self.environment.define(var_name, Type("", "string"))
 
 
 class CSharpClass:
@@ -135,6 +56,7 @@ class CSharpClass:
 
     def __init__(self, node: Node, source_bytes: bytes, globals: Environment | None = None):
         self.node = node
+        self.source = source_bytes  # Add this line
         self.attributes = []
         self.class_name = ""
         self.environment = Environment(globals)
@@ -318,27 +240,35 @@ class CSharpClass:
             resolved = CSEvaluator.evaluate(type_obj.value, self.environment)
             type_obj.value = resolved
 
+    def get_methods(self) -> Iterator['CSharpMethod']:
+        for child in self.node.children:
+            if child.type == "declaration_list":
+                for member in child.children:
+                    if member.type == "method_declaration":
+                        yield CSharpMethod(member, self.source, self)
+
 class CSharp:
     var_decl_types = ["field_declaration", "property_declaration", "method_declaration"] # , "event_field_declaration" ## support not needed now
 
     language = Language(tscsharp.language())
     parser = Parser(language)
 
-    def __init__(self, source_code: str):
+    def __init__(self, source_code: str, globals: Environment | None = None):
         self.source = source_code.encode()
         self.tree: Tree = self.parser.parse(self.source)
+        self.globals = globals # globals for classes within
 
     def get_classes(self) -> Iterator[CSharpClass]:
         for node in self._traverse():
             if node.type == "class_declaration":
-                yield CSharpClass(node, self.source)
+                yield CSharpClass(node, self.source, self.globals)
 
     def _traverse(self) -> Iterator[Node]:
         cursor = self.tree.walk()
     
         reached_root = False
         while reached_root == False:
-            yield cursor.node
+            if cursor.node: yield cursor.node
     
             if cursor.goto_first_child():
                 continue
